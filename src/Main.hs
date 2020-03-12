@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Main where
 
@@ -13,6 +14,7 @@ import Brick.AttrMap (attrMap, AttrMap)
 import Brick.Widgets.Border
 import Graphics.Vty
 
+-- APP LOGIC
 -- words we prefer not to obscure
 commonWords :: [String]
 commonWords = ["the", "and"]
@@ -78,17 +80,34 @@ hideHelper tries line = do
     then hideHelper (tries + 1) line
     else return (Just idx)
 
+file2Poem :: FilePath -> IO Poem
+file2Poem file = do
+  s <- readFile file
+  ls <- return $ lines s
+  return $ makePoem ls False
 
+wordObscuredPoem :: Poem -> IO Poem
+wordObscuredPoem poem = do
+  let pBody = body poem
+  idxes <- idxesToHide pBody
+  obscBody <- return $ zipWith (\n l -> obscureLine n l) idxes pBody
+  return $ poem { body = obscBody, obscured = True }
 
--- chant :: [String]
--- chant =
---   [ "Bowl-washing Chant"
---   , "We use this water to wash our bowls"
---   , "it tastes like heavenly nectar."
---   , "We offer it to the many spirits to satisfy them."
---   , "Om, Maha-ku-sha-laya Svaha!"
---   ]
+lineObscuredPoem :: Poem -> IO Poem
+lineObscuredPoem p@(Poem _ [] _) = return p
+lineObscuredPoem poem = do
+  idx <- randomRIO (0, maxIdx poem)
+  return $ poem { body = fmap (obsc idx) (withIndex $ body poem)}
+  where
+    maxIdx :: Poem -> Int
+    maxIdx p = (length $ body p) - 1
 
+    obsc :: Int -> (Int, String) -> String
+    obsc j (i, line)
+      | i == j = unwords $ fmap obscureWord $ words line
+      | otherwise = line
+
+-- UI
 renderPoem :: Poem -> Widget ()
 renderPoem poem =
   let
@@ -117,18 +136,24 @@ app = App
   , appAttrMap = const aMap
   }
 
+displayPoem :: (Poem -> IO Poem) -> FilePath -> IO ()
+displayPoem f file = do
+  p <- file2Poem file
+  p2 <- f p
+  _ <- defaultMain app [p2, p]
+  return ()
+
+wordMode :: FilePath -> IO ()
+wordMode = displayPoem wordObscuredPoem
+
+lineMode :: FilePath -> IO ()
+lineMode = displayPoem lineObscuredPoem
+
 main :: IO ()
 main = do
   args <- getArgs
   case args of
-    [file] -> do
-      s <- readFile file
-      ls <- return $ lines s
-      p <- return $ makePoem ls False
-      b <- return $ body p
-      ns <- idxesToHide b
-      os <- return $ zipWith (\n l -> obscureLine n l) ns b
-      p2 <- return $ p { body = os, obscured = True }
-      _ <- defaultMain app [p2, p]
-      return ()
-    _ -> putStrLn "wrong number of args"
+    [file] -> wordMode file
+    ["word", file] -> wordMode file
+    ["line", file] -> lineMode file
+    _ -> putStrLn "Usage: poem-thing [word|line] <filepath>"
