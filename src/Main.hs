@@ -33,10 +33,7 @@ data Poem = Poem
 
 makePoem :: [String] -> Bool -> Poem
 makePoem [] _ = Poem "" [] False
-makePoem xs isObscured = Poem (head xs) (fmap preserveBlankLine $ tail xs) isObscured
-  where
-    preserveBlankLine "" = " "
-    preserveBlankLine l = l
+makePoem xs isObscured = Poem (head xs) (tail xs) isObscured
 
 withIndex :: [a] -> [(Int, a)]
 withIndex [] = []
@@ -93,19 +90,34 @@ wordObscuredPoem poem = do
   obscBody <- return $ zipWith (\n l -> obscureLine n l) idxes pBody
   return $ poem { body = obscBody, obscured = True }
 
+stanzatize :: [String] -> [[String]]
+stanzatize [] = []
+stanzatize lns@(l:ls) =
+  let
+    (stanza, rest) = span (\x -> x /= "") (if l == "" then ls else lns)
+  in
+    stanza : (stanzatize rest)
+
+obscureStanza :: [String] -> IO [String]
+obscureStanza xs = do
+  idx <- randomRIO (0, maxIdx xs)
+  return $ fmap (obsc idx) (withIndex xs)
+
+maxIdx :: [String] -> Int
+maxIdx ls = (length ls) - 1
+
+obsc :: Int -> (Int, String) -> String
+obsc j (i, line)
+  | i == j = unwords $ fmap obscureWord $ words line
+  | otherwise = line
+
 lineObscuredPoem :: Poem -> IO Poem
 lineObscuredPoem p@(Poem _ [] _) = return p
 lineObscuredPoem poem = do
-  idx <- randomRIO (0, maxIdx poem)
-  return $ poem { body = fmap (obsc idx) (withIndex $ body poem)}
-  where
-    maxIdx :: Poem -> Int
-    maxIdx p = (length $ body p) - 1
-
-    obsc :: Int -> (Int, String) -> String
-    obsc j (i, line)
-      | i == j = unwords $ fmap obscureWord $ words line
-      | otherwise = line
+  let stanzas = stanzatize $ body poem
+  obStanzas <- mapM obscureStanza stanzas
+  pBody <- return $ concat $ intersperse [""] obStanzas
+  return $ poem { body = pBody }
 
 -- UI
 renderPoem :: Poem -> Widget ()
@@ -113,7 +125,7 @@ renderPoem poem =
   let
     titleClass = if (obscured poem) then "obscuredTitle" else "title"
     tWidget = withAttr titleClass $ hCenter $ str $ title poem
-    bWidget = vBox $ fmap (hCenter . str) (body poem)
+    bWidget = hCenter $ str (unlines $ body poem)
     combined = [tWidget, bWidget]
   in
     center $ vBox combined
@@ -123,8 +135,8 @@ renderPoems ps = [border $ hBox $ intersperse vBorder $ fmap renderPoem ps]
 
 aMap :: AttrMap
 aMap = attrMap (brightWhite `on` black)
-  [ ("title", cyan `on` black)
-  , ("obscuredTitle", magenta `on` black)
+  [ ("title", brightBlue `on` black)
+  , ("obscuredTitle", red `on` black)
   ]
 
 app :: App [Poem] e ()
