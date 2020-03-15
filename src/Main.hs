@@ -117,7 +117,7 @@ lineObscuredPoem poem = do
   let stanzas = stanzatize $ body poem
   obStanzas <- mapM obscureStanza stanzas
   pBody <- return $ concat $ intersperse [""] obStanzas
-  return $ poem { body = pBody }
+  return $ poem { body = pBody, obscured = True }
 
 -- UI
 renderPoem :: Poem -> Widget ()
