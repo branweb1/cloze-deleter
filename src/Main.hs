@@ -8,11 +8,13 @@ import System.Environment
 import Data.List
 import Data.Char (toLower)
 import Brick
+import Brick.Main as M
+import Brick.Types as T
 import Brick.Widgets.Center
 import Brick.Util (on)
 import Brick.AttrMap (attrMap, AttrMap)
 import Brick.Widgets.Border
-import Graphics.Vty
+import Graphics.Vty as V
 
 -- APP LOGIC
 -- words we prefer not to obscure
@@ -120,18 +122,19 @@ lineObscuredPoem poem = do
   return $ poem { body = pBody, obscured = True }
 
 -- UI
-renderPoem :: Poem -> Widget ()
+renderPoem :: Poem -> Widget Name
 renderPoem poem =
   let
     titleClass = if (obscured poem) then "obscuredTitle" else "title"
-    tWidget = withAttr titleClass $ hCenter $ str $ title poem
-    bWidget = hCenter $ str (unlines $ body poem)
+    tWidget = withAttr titleClass $ padTopBottom 2 $ str $ title poem
+    bWidget = padBottom (Pad 2) $ str (unlines $ body poem)
     combined = [tWidget, bWidget]
   in
-    center $ vBox combined
+    hCenter $ vBox combined
 
-renderPoems :: [Poem] -> [Widget ()]
-renderPoems ps = [border $ hBox $ intersperse vBorder $ fmap renderPoem ps]
+
+renderPoems :: [Poem] -> [Widget Name]
+renderPoems ps = [viewport ViewportMain Vertical $ vBox [hBox $ fmap renderPoem ps]]
 
 aMap :: AttrMap
 aMap = attrMap (brightWhite `on` black)
@@ -139,11 +142,22 @@ aMap = attrMap (brightWhite `on` black)
   , ("obscuredTitle", red `on` black)
   ]
 
-app :: App [Poem] e ()
+data Name = ViewportMain deriving (Show, Ord, Eq)
+
+vpScroll :: M.ViewportScroll Name
+vpScroll = M.viewportScroll ViewportMain
+
+appEvent :: [Poem] -> T.BrickEvent Name e -> T.EventM Name (T.Next [Poem])
+appEvent p (T.VtyEvent (V.EvKey V.KDown  [])) = M.vScrollBy vpScroll 1 >> M.continue p
+appEvent p (T.VtyEvent (V.EvKey (V.KChar ' ')  [])) = M.vScrollBy vpScroll 1 >> M.continue p
+appEvent p (T.VtyEvent (V.EvKey V.KUp    [])) = M.vScrollBy vpScroll (-1) >> M.continue p
+appEvent p _ = M.halt p
+
+app :: App [Poem] e Name
 app = App
   { appDraw = renderPoems
   , appChooseCursor = neverShowCursor
-  , appHandleEvent = resizeOrQuit
+  , appHandleEvent = appEvent
   , appStartEvent = return
   , appAttrMap = const aMap
   }
